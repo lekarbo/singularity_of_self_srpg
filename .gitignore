@@ -3,3 +3,9 @@
 build/
 .gradle-env/
 .java-env/
+.gradle-user/
+.gradle-tmp/
+/.gradle-tmp/
+/.gradle-user/
+.idea/
+*.iml
