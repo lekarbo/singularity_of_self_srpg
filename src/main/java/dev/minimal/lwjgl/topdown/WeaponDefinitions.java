@@ -8,6 +8,8 @@ final class WeaponDefinitions {
         "player-lance",
         "Aegis Lance",
         WeaponTag.ROCK,
+        8,
+        5,
         List.of(
             new WeaponSkill("lance-thrust", "Focused Thrust", SkillPattern.SINGLE_TARGET, 3, 1,
                 "Stab a single tile up to 3 spaces away."),
@@ -20,6 +22,8 @@ final class WeaponDefinitions {
         "enemy-pistol",
         "Pulse Pistol",
         WeaponTag.SCISSORS,
+        6,
+        3,
         List.of(
             new WeaponSkill("pistol-shot", "Pulse Shot", SkillPattern.SINGLE_TARGET, 4, 1,
                 "Single target ranged shot."),

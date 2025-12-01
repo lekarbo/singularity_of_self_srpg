@@ -447,8 +447,9 @@ final class TopDownPlatformerGame {
         }
         String loadout = equippedWeapon == null
             ? "Loadout: press V to open the weapon menu."
-            : String.format(Locale.ROOT, "Loadout: [%s] - %s (V to swap)", equippedWeapon.tag().symbol(),
-                equippedWeapon.displayName());
+            : String.format(Locale.ROOT, "Loadout: [%s] - %s  DMG %d / DEF %d (V to swap)",
+                equippedWeapon.tag().symbol(), equippedWeapon.displayName(), equippedWeapon.damage(),
+                equippedWeapon.defense());
         drawText(12f, 64f, loadout, 0.82f, 0.92f, 0.98f);
     }
 
@@ -568,7 +569,8 @@ final class TopDownPlatformerGame {
                 glEnd();
             }
             drawText(textX, rowY, selected ? ">" : " ", 0.9f, 0.9f, 0.9f);
-            String label = String.format(Locale.ROOT, "[%s] - %s", weapon.tag().symbol(), weapon.displayName());
+            String label = String.format(Locale.ROOT, "[%s] - %s   DMG %d / DEF %d",
+                weapon.tag().symbol(), weapon.displayName(), weapon.damage(), weapon.defense());
             float labelR = selected ? 0.98f : 0.9f;
             float labelG = selected ? 0.98f : 0.9f;
             float labelB = selected ? 1f : 0.94f;
@@ -576,8 +578,9 @@ final class TopDownPlatformerGame {
         }
 
         if (equippedWeapon != null) {
-            String equipped = String.format(Locale.ROOT, "Equipped: [%s] - %s",
-                equippedWeapon.tag().symbol(), equippedWeapon.displayName());
+            String equipped = String.format(Locale.ROOT, "Equipped: [%s] - %s   DMG %d / DEF %d",
+                equippedWeapon.tag().symbol(), equippedWeapon.displayName(), equippedWeapon.damage(),
+                equippedWeapon.defense());
             drawText(textX, originY + panelHeight - 32f, equipped, 0.88f, 0.95f, 0.98f);
         }
 
