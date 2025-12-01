@@ -31,11 +31,15 @@ final class TopDownPlatformerGame {
     private Squad enemySquad;
     private PlacementController placementController;
     private MovementPreview movementPreview;
+    private WeaponMenu weaponMenu;
+    private Weapon equippedWeapon;
+    private boolean loadoutChosen;
     private BattlePhase battlePhase = BattlePhase.PLACEMENT;
     private boolean placementBannerVisible = true;
     private int selectedUnitIndex = -1;
     private GameStatus status = GameStatus.RUNNING;
     private String contextualMessage = OBJECTIVE_TEXT;
+    private String messageBeforeMenu = OBJECTIVE_TEXT;
     private long window = NULL;
     private boolean regenerateOnReset = false;
     private UiMode uiMode = UiMode.CONFIG;
@@ -46,6 +50,8 @@ final class TopDownPlatformerGame {
     TopDownPlatformerGame(GameConfig config) {
         this.currentSettings = LevelSettings.fromConfig(config);
         this.editingSettings = this.currentSettings;
+        this.weaponMenu = new WeaponMenu(WeaponDefinitions.catalog());
+        this.equippedWeapon = weaponMenu.selected();
     }
 
     private boolean handleUnitSelectionKey(int key) {
@@ -138,7 +144,7 @@ final class TopDownPlatformerGame {
     }
 
     private void update(float deltaSeconds) {
-        if (uiMode == UiMode.CONFIG || battlePhase != BattlePhase.ACTIVE) {
+        if (uiMode == UiMode.CONFIG || uiMode == UiMode.WEAPON_MENU || battlePhase != BattlePhase.ACTIVE) {
             return;
         }
         // Movement/turn logic will be introduced in a future iteration.
@@ -162,21 +168,30 @@ final class TopDownPlatformerGame {
             cursor.render();
         }
         drawHud();
-        if (uiMode != UiMode.CONFIG && battlePhase == BattlePhase.PLACEMENT && placementBannerVisible) {
-            drawLandingBanner();
-        }
         if (uiMode == UiMode.CONFIG) {
             drawConfigOverlay();
+        } else if (uiMode == UiMode.WEAPON_MENU) {
+            drawWeaponMenu();
+        } else if (battlePhase == BattlePhase.PLACEMENT && placementBannerVisible) {
+            drawLandingBanner();
         }
     }
 
     private void handleKeyPress(int key) {
+        if (uiMode == UiMode.WEAPON_MENU) {
+            handleWeaponMenuKey(key);
+            return;
+        }
         if (key == GLFW_KEY_ESCAPE) {
             glfwSetWindowShouldClose(window, true);
             return;
         }
         if (uiMode == UiMode.CONFIG) {
             handleConfigKey(key);
+            return;
+        }
+        if (key == GLFW_KEY_V) {
+            openWeaponMenu();
             return;
         }
         if (key == GLFW_KEY_TAB || key == GLFW_KEY_M) {
@@ -264,6 +279,34 @@ final class TopDownPlatformerGame {
         }
     }
 
+    private void handleWeaponMenuKey(int key) {
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_TAB || key == GLFW_KEY_M || key == GLFW_KEY_V) {
+            exitWeaponMenu();
+            return;
+        }
+        if (weaponMenu == null) {
+            exitWeaponMenu();
+            return;
+        }
+        if (key == GLFW_KEY_UP || key == GLFW_KEY_W) {
+            weaponMenu.moveSelection(-1);
+            return;
+        }
+        if (key == GLFW_KEY_DOWN || key == GLFW_KEY_S) {
+            weaponMenu.moveSelection(1);
+            return;
+        }
+        if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER || key == GLFW_KEY_SPACE) {
+            Weapon selection = weaponMenu.selected();
+            if (selection != null) {
+                equippedWeapon = selection;
+                contextualMessage = String.format(Locale.ROOT, "Equipped %s [%s].", selection.displayName(),
+                    selection.tag().symbol());
+            }
+            exitWeaponMenu();
+        }
+    }
+
     private void enterConfigMode() {
         uiMode = UiMode.CONFIG;
         editingSettings = currentSettings;
@@ -272,9 +315,13 @@ final class TopDownPlatformerGame {
     }
 
     private void exitConfigModeWithoutApply() {
-        uiMode = UiMode.PLAYING;
         seedInput.setLength(0);
-        contextualMessage = OBJECTIVE_TEXT;
+        if (battlePhase == BattlePhase.PLACEMENT) {
+            contextualMessage = "Press Enter to acknowledge the briefing, then deploy your squad.";
+        } else {
+            contextualMessage = OBJECTIVE_TEXT;
+        }
+        ensureWeaponMenuForPlacement();
     }
 
     private void applyConfigChanges() {
@@ -289,9 +336,35 @@ final class TopDownPlatformerGame {
         currentSettings = editingSettings;
         loadNewLevel();
         status = GameStatus.RUNNING;
-        contextualMessage = OBJECTIVE_TEXT;
         regenerateOnReset = false;
+        ensureWeaponMenuForPlacement();
+    }
+
+    private void openWeaponMenu() {
+        if (weaponMenu == null || weaponMenu.weapons().isEmpty()) {
+            weaponMenu = new WeaponMenu(WeaponDefinitions.catalog());
+        }
+        if (uiMode != UiMode.WEAPON_MENU) {
+            uiMode = UiMode.WEAPON_MENU;
+            messageBeforeMenu = contextualMessage;
+            contextualMessage = "Weapon menu: Up/Down to move, Enter equips, V/Tab closes.";
+        }
+    }
+
+    private void exitWeaponMenu() {
         uiMode = UiMode.PLAYING;
+        loadoutChosen = true;
+        if (contextualMessage != null && contextualMessage.startsWith("Weapon menu") && messageBeforeMenu != null) {
+            contextualMessage = messageBeforeMenu;
+        }
+    }
+
+    private void ensureWeaponMenuForPlacement() {
+        if (battlePhase == BattlePhase.PLACEMENT && !loadoutChosen && uiMode != UiMode.WEAPON_MENU) {
+            openWeaponMenu();
+        } else {
+            uiMode = UiMode.PLAYING;
+        }
     }
 
     private boolean appendSeedCharacter(int key) {
@@ -340,7 +413,6 @@ final class TopDownPlatformerGame {
 
     private void resetLevel(boolean regenerateLevel) {
         status = GameStatus.RUNNING;
-        contextualMessage = OBJECTIVE_TEXT;
         if (regenerateLevel || level == null) {
             if (!currentSettings.lockSeed()) {
                 currentSettings = currentSettings.withRandomSeed();
@@ -353,10 +425,11 @@ final class TopDownPlatformerGame {
             initializeBattleState();
         }
         regenerateOnReset = false;
+        ensureWeaponMenuForPlacement();
     }
 
     private void drawHud() {
-        float hudHeight = 64f;
+        float hudHeight = 80f;
 
         glColor4f(0f, 0f, 0f, 0.65f);
         glBegin(GL_QUADS);
@@ -372,6 +445,11 @@ final class TopDownPlatformerGame {
             drawText(12f, 20f, OBJECTIVE_TEXT, 1f, 1f, 1f);
             drawText(12f, 42f, contextualMessage, 0.85f, 0.95f, 1f);
         }
+        String loadout = equippedWeapon == null
+            ? "Loadout: press V to open the weapon menu."
+            : String.format(Locale.ROOT, "Loadout: [%s] - %s (V to swap)", equippedWeapon.tag().symbol(),
+                equippedWeapon.displayName());
+        drawText(12f, 64f, loadout, 0.82f, 0.92f, 0.98f);
     }
 
     private void drawConfigOverlay() {
@@ -433,6 +511,77 @@ final class TopDownPlatformerGame {
         drawText(x, y, "- WASD / Arrow keys shift the tactical cursor", 0.9f, 0.85f, 1f, 0.95f);
         y += 22f;
         drawText(x, y, "- Enter confirms placement on an unoccupied spawn tile", 0.9f, 0.85f, 1f, 0.95f);
+    }
+
+    private void drawWeaponMenu() {
+        if (level == null || weaponMenu == null) {
+            return;
+        }
+        List<Weapon> weapons = weaponMenu.weapons();
+        if (weapons.isEmpty()) {
+            return;
+        }
+        float panelWidth = Math.min(level.pixelWidth() - 120f, 620f);
+        float rowHeight = 30f;
+        float panelHeight = 120f + weapons.size() * rowHeight;
+        float originX = (level.pixelWidth() - panelWidth) / 2f;
+        float originY = Math.max(32f, level.pixelHeight() * 0.18f);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        glColor4f(0f, 0f, 0f, 0.82f);
+        glBegin(GL_QUADS);
+        glVertex2f(originX, originY);
+        glVertex2f(originX + panelWidth, originY);
+        glVertex2f(originX + panelWidth, originY + panelHeight);
+        glVertex2f(originX, originY + panelHeight);
+        glEnd();
+
+        glColor4f(0.35f, 0.75f, 1f, 0.18f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(originX, originY);
+        glVertex2f(originX + panelWidth, originY);
+        glVertex2f(originX + panelWidth, originY + panelHeight);
+        glVertex2f(originX, originY + panelHeight);
+        glEnd();
+
+        float textX = originX + 28f;
+        float y = originY + 44f;
+        drawText(textX, y, "WEAPON LOADOUT", 0.95f, 0.88f, 0.72f, 1.1f);
+        y += 28f;
+        drawText(textX, y, "Up/Down: move cursor    Enter: equip    V/Tab: close", 0.82f, 0.9f, 0.96f);
+        y += 18f;
+
+        int selectedIndex = weaponMenu.selectedIndex();
+        for (int i = 0; i < weapons.size(); i++) {
+            Weapon weapon = weapons.get(i);
+            float rowY = y + i * rowHeight;
+            boolean selected = i == selectedIndex;
+            if (selected) {
+                glColor4f(0.2f, 0.55f, 0.9f, 0.25f);
+                glBegin(GL_QUADS);
+                glVertex2f(originX + 16f, rowY - 6f);
+                glVertex2f(originX + panelWidth - 16f, rowY - 6f);
+                glVertex2f(originX + panelWidth - 16f, rowY + rowHeight - 10f);
+                glVertex2f(originX + 16f, rowY + rowHeight - 10f);
+                glEnd();
+            }
+            drawText(textX, rowY, selected ? ">" : " ", 0.9f, 0.9f, 0.9f);
+            String label = String.format(Locale.ROOT, "[%s] - %s", weapon.tag().symbol(), weapon.displayName());
+            float labelR = selected ? 0.98f : 0.9f;
+            float labelG = selected ? 0.98f : 0.9f;
+            float labelB = selected ? 1f : 0.94f;
+            drawText(textX + 18f, rowY, label, labelR, labelG, labelB);
+        }
+
+        if (equippedWeapon != null) {
+            String equipped = String.format(Locale.ROOT, "Equipped: [%s] - %s",
+                equippedWeapon.tag().symbol(), equippedWeapon.displayName());
+            drawText(textX, originY + panelHeight - 32f, equipped, 0.88f, 0.95f, 0.98f);
+        }
+
+        glDisable(GL_BLEND);
     }
 
     private float drawConfigRow(float y, String label, String value) {
@@ -720,6 +869,7 @@ final class TopDownPlatformerGame {
         battlePhase = BattlePhase.PLACEMENT;
         selectedUnitIndex = -1;
         movementPreview = null;
+        loadoutChosen = false;
         playerSquad = Squad.create(UnitFaction.PLAYER, PLAYER_SQUAD_SIZE);
         enemySquad = Squad.create(UnitFaction.ENEMY, ENEMY_SQUAD_SIZE);
         placementBannerVisible = true;
@@ -784,7 +934,8 @@ final class TopDownPlatformerGame {
 
     private enum UiMode {
         CONFIG,
-        PLAYING
+        PLAYING,
+        WEAPON_MENU
     }
 
     private enum BattlePhase {

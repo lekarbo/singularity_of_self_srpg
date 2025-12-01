@@ -110,10 +110,13 @@ Key advantages we keep from the base project:
 - [ ] Extract `Player` logic into a generalized `Unit` component shared by both factions.
 - [ ] Stand up the flood-fill movement preview and surface it as translucent highlights.
 - [ ] Add JUnit coverage around pathfinding and ability resolution to prep for CI.
+- [ ] Clean up legacy hazard-runner remnants (old objective text, single-avatar hints, unused `Player`/`PlayerSprite` once the squad loop is stable).
 
 ## Config tweaks while iterating
 
 All helper scripts still work the same way (`./scripts/run.sh`, `./scripts/gradle.sh build`). Until authored encounters arrive, continue using the config overlay (`Tab`/`M`) to resize the board or adjust tile sizes. Hazard density currently influences how many blocking pillars spawn—treat that as a stand-in for terrain density until the SRPG-specific generator lands.
+
+Press `V` in-game to open the weapon loadout menu, browse the rock/paper/scissors weapon set, and equip via `Enter`.
 
 ## Repository layout
 
