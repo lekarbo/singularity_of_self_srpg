@@ -10,6 +10,7 @@ final class WeaponDefinitions {
         WeaponTag.ROCK,
         8,
         5,
+        "Shielded lance with disciplined poke and a sweeping brace.",
         List.of(
             new WeaponSkill("lance-thrust", "Focused Thrust", SkillPattern.SINGLE_TARGET, 3, 1,
                 "Stab a single tile up to 3 spaces away."),
@@ -24,6 +25,7 @@ final class WeaponDefinitions {
         WeaponTag.SCISSORS,
         6,
         3,
+        "Rapid pulse sidearm that pierces aligned foes but lacks defense.",
         List.of(
             new WeaponSkill("pistol-shot", "Pulse Shot", SkillPattern.SINGLE_TARGET, 4, 1,
                 "Single target ranged shot."),

@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.lwjgl.glfw.GLFW.*;
@@ -33,6 +34,9 @@ final class TopDownPlatformerGame {
     private MovementPreview movementPreview;
     private WeaponMenu weaponMenu;
     private Weapon equippedWeapon;
+    private boolean partyReviewed;
+    private Unit loadoutTarget;
+    private final Set<String> assignedLoadouts = new HashSet<>();
     private boolean loadoutChosen;
     private BattlePhase battlePhase = BattlePhase.PLACEMENT;
     private boolean placementBannerVisible = true;
@@ -46,6 +50,7 @@ final class TopDownPlatformerGame {
     private LevelSettings currentSettings;
     private LevelSettings editingSettings;
     private final StringBuilder seedInput = new StringBuilder();
+    private Unit lastSelectedUnit;
 
     TopDownPlatformerGame(GameConfig config) {
         this.currentSettings = LevelSettings.fromConfig(config);
@@ -144,7 +149,8 @@ final class TopDownPlatformerGame {
     }
 
     private void update(float deltaSeconds) {
-        if (uiMode == UiMode.CONFIG || uiMode == UiMode.WEAPON_MENU || battlePhase != BattlePhase.ACTIVE) {
+        if (uiMode == UiMode.CONFIG || uiMode == UiMode.WEAPON_MENU || uiMode == UiMode.PARTY_MENU
+            || battlePhase != BattlePhase.ACTIVE) {
             return;
         }
         // Movement/turn logic will be introduced in a future iteration.
@@ -170,6 +176,8 @@ final class TopDownPlatformerGame {
         drawHud();
         if (uiMode == UiMode.CONFIG) {
             drawConfigOverlay();
+        } else if (uiMode == UiMode.PARTY_MENU) {
+            drawPartyMenu();
         } else if (uiMode == UiMode.WEAPON_MENU) {
             drawWeaponMenu();
         } else if (battlePhase == BattlePhase.PLACEMENT && placementBannerVisible) {
@@ -178,6 +186,10 @@ final class TopDownPlatformerGame {
     }
 
     private void handleKeyPress(int key) {
+        if (uiMode == UiMode.PARTY_MENU) {
+            handlePartyMenuKey(key);
+            return;
+        }
         if (uiMode == UiMode.WEAPON_MENU) {
             handleWeaponMenuKey(key);
             return;
@@ -188,6 +200,10 @@ final class TopDownPlatformerGame {
         }
         if (uiMode == UiMode.CONFIG) {
             handleConfigKey(key);
+            return;
+        }
+        if (key == GLFW_KEY_P) {
+            openPartyMenu();
             return;
         }
         if (key == GLFW_KEY_V) {
@@ -279,6 +295,16 @@ final class TopDownPlatformerGame {
         }
     }
 
+    private void handlePartyMenuKey(int key) {
+        if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_TAB || key == GLFW_KEY_M || key == GLFW_KEY_P) {
+            exitPartyMenu();
+            return;
+        }
+        if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER || key == GLFW_KEY_SPACE) {
+            exitPartyMenu();
+        }
+    }
+
     private void handleWeaponMenuKey(int key) {
         if (key == GLFW_KEY_ESCAPE || key == GLFW_KEY_TAB || key == GLFW_KEY_M || key == GLFW_KEY_V) {
             exitWeaponMenu();
@@ -300,8 +326,16 @@ final class TopDownPlatformerGame {
             Weapon selection = weaponMenu.selected();
             if (selection != null) {
                 equippedWeapon = selection;
-                contextualMessage = String.format(Locale.ROOT, "Equipped %s [%s].", selection.displayName(),
-                    selection.tag().symbol());
+                if (loadoutTarget != null) {
+                    loadoutTarget.equipWeapon(selection);
+                    assignedLoadouts.add(loadoutTarget.id());
+                    contextualMessage = String.format(Locale.ROOT, "Equipped [%s] for %s.", selection.displayName(),
+                        loadoutTarget.displayName());
+                } else {
+                    contextualMessage = String.format(Locale.ROOT, "Equipped [%s] [%s].", selection.displayName(),
+                        selection.tag().symbol());
+                }
+                loadoutTarget = null;
             }
             exitWeaponMenu();
         }
@@ -340,31 +374,136 @@ final class TopDownPlatformerGame {
         ensureWeaponMenuForPlacement();
     }
 
+    private void openPartyMenu() {
+        if (playerSquad == null) {
+            return;
+        }
+        if (uiMode != UiMode.PARTY_MENU) {
+            uiMode = UiMode.PARTY_MENU;
+            messageBeforeMenu = contextualMessage;
+            contextualMessage = "Party roster: press P/Tab to close, Enter to continue.";
+        }
+    }
+
     private void openWeaponMenu() {
+        if (battlePhase == BattlePhase.PLACEMENT && !partyReviewed) {
+            openPartyMenu();
+            return;
+        }
+        loadoutTarget = determineNextLoadoutTarget();
         if (weaponMenu == null || weaponMenu.weapons().isEmpty()) {
             weaponMenu = new WeaponMenu(WeaponDefinitions.catalog());
         }
         if (uiMode != UiMode.WEAPON_MENU) {
             uiMode = UiMode.WEAPON_MENU;
             messageBeforeMenu = contextualMessage;
-            contextualMessage = "Weapon menu: Up/Down to move, Enter equips, V/Tab closes.";
+            String hint = loadoutTarget != null ? String.format(" (assigning %s)", loadoutTarget.displayName()) : "";
+            contextualMessage = "Weapon menu" + hint + ": Up/Down to move, Enter equips, V/Tab closes.";
         }
+    }
+
+    private Unit determineNextLoadoutTarget() {
+        if (playerSquad != null) {
+            List<Unit> units = playerSquad.units();
+            if (lastSelectedUnit != null && lastSelectedUnit.isPlaced() && units.contains(lastSelectedUnit)) {
+                return lastSelectedUnit;
+            }
+            if (selectedUnitIndex >= 0 && selectedUnitIndex < units.size()) {
+                Unit selected = units.get(selectedUnitIndex);
+                if (selected != null && selected.isPlaced()) {
+                    return selected;
+                }
+            }
+        }
+        if (placementController != null) {
+            Unit next = placementController.nextUnit();
+            if (next != null && !assignedLoadouts.contains(next.id())) {
+                return next;
+            }
+        }
+        if (playerSquad != null) {
+            for (Unit unit : playerSquad.units()) {
+                if (!assignedLoadouts.contains(unit.id())) {
+                    return unit;
+                }
+            }
+            if (!playerSquad.units().isEmpty()) {
+                return playerSquad.units().get(0);
+            }
+        }
+        return null;
+    }
+
+    private boolean loadoutsComplete() {
+        if (playerSquad == null || playerSquad.units().isEmpty()) {
+            return false;
+        }
+        for (Unit unit : playerSquad.units()) {
+            if (!assignedLoadouts.contains(unit.id())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private Unit loadoutPreviewUnit() {
+        if (battlePhase == BattlePhase.ACTIVE && selectedUnitIndex >= 0 && playerSquad != null) {
+            List<Unit> units = playerSquad.units();
+            if (selectedUnitIndex < units.size()) {
+                return units.get(selectedUnitIndex);
+            }
+        }
+        if (placementController != null) {
+            Unit next = placementController.nextUnit();
+            if (next != null) {
+                return next;
+            }
+        }
+        if (playerSquad != null && !playerSquad.units().isEmpty()) {
+            return playerSquad.units().get(0);
+        }
+        return null;
+    }
+
+    private void exitPartyMenu() {
+        uiMode = UiMode.PLAYING;
+        partyReviewed = true;
+        if (contextualMessage != null && contextualMessage.startsWith("Party roster") && messageBeforeMenu != null) {
+            contextualMessage = messageBeforeMenu;
+        }
+        ensureMenusForPlacement();
     }
 
     private void exitWeaponMenu() {
         uiMode = UiMode.PLAYING;
-        loadoutChosen = true;
+        loadoutChosen = loadoutsComplete();
+        if (!loadoutChosen) {
+            ensureMenusForPlacement();
+            return;
+        }
         if (contextualMessage != null && contextualMessage.startsWith("Weapon menu") && messageBeforeMenu != null) {
             contextualMessage = messageBeforeMenu;
         }
     }
 
     private void ensureWeaponMenuForPlacement() {
-        if (battlePhase == BattlePhase.PLACEMENT && !loadoutChosen && uiMode != UiMode.WEAPON_MENU) {
-            openWeaponMenu();
-        } else {
+        ensureMenusForPlacement();
+    }
+
+    private void ensureMenusForPlacement() {
+        if (battlePhase != BattlePhase.PLACEMENT) {
             uiMode = UiMode.PLAYING;
+            return;
         }
+        if (!partyReviewed) {
+            openPartyMenu();
+            return;
+        }
+        if (!loadoutChosen) {
+            openWeaponMenu();
+            return;
+        }
+        uiMode = UiMode.PLAYING;
     }
 
     private boolean appendSeedCharacter(int key) {
@@ -409,6 +548,7 @@ final class TopDownPlatformerGame {
             glfwSetWindowSize(window, level.pixelWidth(), level.pixelHeight());
         }
         editingSettings = currentSettings;
+        ensureMenusForPlacement();
     }
 
     private void resetLevel(boolean regenerateLevel) {
@@ -445,11 +585,17 @@ final class TopDownPlatformerGame {
             drawText(12f, 20f, OBJECTIVE_TEXT, 1f, 1f, 1f);
             drawText(12f, 42f, contextualMessage, 0.85f, 0.95f, 1f);
         }
-        String loadout = equippedWeapon == null
-            ? "Loadout: press V to open the weapon menu."
-            : String.format(Locale.ROOT, "Loadout: [%s] - %s  DMG %d / DEF %d (V to swap)",
-                equippedWeapon.tag().symbol(), equippedWeapon.displayName(), equippedWeapon.damage(),
-                equippedWeapon.defense());
+        Unit previewUnit = loadoutPreviewUnit();
+        Weapon loadoutWeapon = previewUnit != null ? previewUnit.weapon() : equippedWeapon;
+        String loadout;
+        if (loadoutWeapon == null) {
+            loadout = "Loadout: press V to open the weapon menu.";
+        } else {
+            String unitSuffix = previewUnit != null ? " for " + previewUnit.displayName() : "";
+            loadout = String.format(Locale.ROOT, "Loadout%s: [%s] - %s  DMG %d / DEF %d (V to change)",
+                unitSuffix, loadoutWeapon.tag().symbol(), loadoutWeapon.displayName(), loadoutWeapon.damage(),
+                loadoutWeapon.defense());
+        }
         drawText(12f, 64f, loadout, 0.82f, 0.92f, 0.98f);
     }
 
@@ -514,6 +660,68 @@ final class TopDownPlatformerGame {
         drawText(x, y, "- Enter confirms placement on an unoccupied spawn tile", 0.9f, 0.85f, 1f, 0.95f);
     }
 
+    private void drawPartyMenu() {
+        if (level == null || playerSquad == null) {
+            return;
+        }
+        List<Unit> units = playerSquad.units();
+        float panelWidth = Math.min(level.pixelWidth() - 120f, 620f);
+        float rowHeight = 28f;
+        float panelHeight = 120f + units.size() * rowHeight;
+        float originX = (level.pixelWidth() - panelWidth) / 2f;
+        float originY = Math.max(32f, level.pixelHeight() * 0.18f);
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        glColor4f(0f, 0f, 0f, 0.82f);
+        glBegin(GL_QUADS);
+        glVertex2f(originX, originY);
+        glVertex2f(originX + panelWidth, originY);
+        glVertex2f(originX + panelWidth, originY + panelHeight);
+        glVertex2f(originX, originY + panelHeight);
+        glEnd();
+
+        glColor4f(0.35f, 0.9f, 0.65f, 0.2f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(originX, originY);
+        glVertex2f(originX + panelWidth, originY);
+        glVertex2f(originX + panelWidth, originY + panelHeight);
+        glVertex2f(originX, originY + panelHeight);
+        glEnd();
+
+        float textX = originX + 28f;
+        float y = originY + 44f;
+        drawText(textX, y, "PARTY ROSTER", 0.9f, 0.98f, 0.86f, 1.1f);
+        y += 28f;
+        drawText(textX, y, "Review squad stats before deployment. P/Tab closes, Enter continues.", 0.82f, 0.9f, 0.96f);
+        y += 18f;
+
+        for (int i = 0; i < units.size(); i++) {
+            Unit unit = units.get(i);
+            float rowY = y + i * rowHeight;
+            if ((i % 2) == 0) {
+                glColor4f(0.2f, 0.65f, 0.45f, 0.2f);
+                glBegin(GL_QUADS);
+                glVertex2f(originX + 16f, rowY - 6f);
+                glVertex2f(originX + panelWidth - 16f, rowY - 6f);
+                glVertex2f(originX + panelWidth - 16f, rowY + rowHeight - 10f);
+                glVertex2f(originX + 16f, rowY + rowHeight - 10f);
+                glEnd();
+            }
+            Weapon weapon = unit.weapon();
+            String weaponLabel = weapon == null
+                ? "unarmed"
+                : String.format(Locale.ROOT, "[%s] %s DMG %d DEF %d", weapon.tag().symbol(), weapon.displayName(),
+                weapon.damage(), weapon.defense());
+            String label = String.format(Locale.ROOT, "%s   HP %d/%d   SP %d/%d   Weapon %s",
+                unit.displayName(), unit.hp(), unit.maxHp(), unit.sp(), unit.maxSp(), weaponLabel);
+            drawText(textX, rowY, label, 0.9f, 0.95f, 0.92f);
+        }
+
+        glDisable(GL_BLEND);
+    }
+
     private void drawWeaponMenu() {
         if (level == null || weaponMenu == null) {
             return;
@@ -522,9 +730,9 @@ final class TopDownPlatformerGame {
         if (weapons.isEmpty()) {
             return;
         }
-        float panelWidth = Math.min(level.pixelWidth() - 120f, 620f);
-        float rowHeight = 30f;
-        float panelHeight = 120f + weapons.size() * rowHeight;
+        float panelWidth = Math.min(level.pixelWidth() - 120f, 640f);
+        float rowHeight = 44f;
+        float panelHeight = 140f + weapons.size() * rowHeight;
         float originX = (level.pixelWidth() - panelWidth) / 2f;
         float originY = Math.max(32f, level.pixelHeight() * 0.18f);
 
@@ -553,6 +761,11 @@ final class TopDownPlatformerGame {
         y += 28f;
         drawText(textX, y, "Up/Down: move cursor    Enter: equip    V/Tab: close", 0.82f, 0.9f, 0.96f);
         y += 18f;
+        String assignmentLine = loadoutTarget != null
+            ? String.format(Locale.ROOT, "Assigning to %s - press Enter to equip.", loadoutTarget.displayName())
+            : "No weapon assigned yet — pick a unit before choosing a loadout.";
+        drawText(textX, y, assignmentLine, 0.78f, 0.88f, 1f);
+        y += 18f;
 
         int selectedIndex = weaponMenu.selectedIndex();
         for (int i = 0; i < weapons.size(); i++) {
@@ -575,6 +788,10 @@ final class TopDownPlatformerGame {
             float labelG = selected ? 0.98f : 0.9f;
             float labelB = selected ? 1f : 0.94f;
             drawText(textX + 18f, rowY, label, labelR, labelG, labelB);
+            String description = weapon.description();
+            if (description != null && !description.isBlank()) {
+                drawText(textX + 18f, rowY + 16f, description, 0.6f, 0.75f, 0.92f, 0.82f);
+            }
         }
 
         if (equippedWeapon != null) {
@@ -631,7 +848,7 @@ final class TopDownPlatformerGame {
             return;
         }
         if (unit.hasMovedThisTurn()) {
-            contextualMessage = String.format(Locale.ROOT, "%s already moved this turn.", unit.id());
+            contextualMessage = String.format(Locale.ROOT, "%s already moved this turn.", unit.displayName());
             return;
         }
         selectedUnitIndex = index;
@@ -645,7 +862,8 @@ final class TopDownPlatformerGame {
             enemySquad != null ? enemySquad.units() : List.of(),
             MOVEMENT_RANGE
         );
-        contextualMessage = String.format(Locale.ROOT, "Selected %s - press Q/E to cycle units.", unit.id());
+        lastSelectedUnit = unit;
+        contextualMessage = String.format(Locale.ROOT, "Selected %s - press Q/E to cycle units.", unit.displayName());
     }
 
     private void renderSpawnZones() {
@@ -740,7 +958,7 @@ final class TopDownPlatformerGame {
             Unit unit = units.get(i);
             if (unit.isPlaced() && unit.position().equals(focus)) {
                 selectUnit(i, false);
-                contextualMessage = String.format(Locale.ROOT, "Selected %s - press Q/E to cycle units.", unit.id());
+                contextualMessage = String.format(Locale.ROOT, "Selected %s - press Q/E to cycle units.", unit.displayName());
                 return true;
             }
         }
@@ -762,12 +980,12 @@ final class TopDownPlatformerGame {
             return true;
         }
         if (unit.hasMovedThisTurn()) {
-            contextualMessage = String.format(Locale.ROOT, "%s already moved this turn.", unit.id());
+            contextualMessage = String.format(Locale.ROOT, "%s already moved this turn.", unit.displayName());
             return true;
         }
         unit.placeAt(target);
         unit.setMovedThisTurn(true);
-        contextualMessage = String.format(Locale.ROOT, "%s moved to (%d,%d).", unit.id(), target.col(), target.row());
+        contextualMessage = String.format(Locale.ROOT, "%s moved to (%d,%d).", unit.displayName(), target.col(), target.row());
         selectedUnitIndex = -1;
         movementPreview = null;
         if (allUnitsMoved(playerSquad)) {
@@ -872,7 +1090,11 @@ final class TopDownPlatformerGame {
         battlePhase = BattlePhase.PLACEMENT;
         selectedUnitIndex = -1;
         movementPreview = null;
+        loadoutTarget = null;
+        partyReviewed = false;
         loadoutChosen = false;
+        assignedLoadouts.clear();
+        lastSelectedUnit = null;
         playerSquad = Squad.create(UnitFaction.PLAYER, PLAYER_SQUAD_SIZE);
         enemySquad = Squad.create(UnitFaction.ENEMY, ENEMY_SQUAD_SIZE);
         placementBannerVisible = true;
@@ -938,6 +1160,7 @@ final class TopDownPlatformerGame {
     private enum UiMode {
         CONFIG,
         PLAYING,
+        PARTY_MENU,
         WEAPON_MENU
     }
 

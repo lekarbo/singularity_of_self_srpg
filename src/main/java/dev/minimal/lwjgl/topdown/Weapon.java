@@ -8,6 +8,7 @@ record Weapon(
     WeaponTag tag,
     int damage,
     int defense,
+    String description,
     List<WeaponSkill> skills
 ) {
 }

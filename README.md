@@ -105,18 +105,25 @@ Key advantages we keep from the base project:
 
 ## TODO
 
-- [ ] Draft the JSON/TOML mission schema and spike a loader that translates it into `Level` tiles.
+- [x] Keep the weapon menu banner tied to the most recently selected unit (or default to Player 1) and warn when no loadout target exists.
+- [ ] Finish the weapon loadout menu with descriptions, stat comparisons (type/attack/defense), and per-unit assignments before the placement phase.
 - [ ] Prototype the cursor/highlight controller that decouples tile focus from the player avatar.
 - [ ] Extract `Player` logic into a generalized `Unit` component shared by both factions.
 - [ ] Stand up the flood-fill movement preview and surface it as translucent highlights.
 - [ ] Add JUnit coverage around pathfinding and ability resolution to prep for CI.
-- [ ] Clean up legacy hazard-runner remnants (old objective text, single-avatar hints, unused `Player`/`PlayerSprite` once the squad loop is stable).
+- [ ] Clean up legacy hazard-runner remnants (old objective text, single-avatar hints, and unused `Player`/`PlayerSprite` once the squad loop is stable).
+
+## Next steps
+
+1. Expand the weapon loadout descriptions (type, stats, flavor, and skills) and lock in per-unit bindings so the placement phase starts with unmistakable choices.
+2. Start building the cursor/highlight controller and movement preview overlays so the tactical grid feels responsive during placement.
+3. Expand unit/ability unit tests and trim the old hazard-runner artifacts once the new squad loop is reliable.
 
 ## Config tweaks while iterating
 
 All helper scripts still work the same way (`./scripts/run.sh`, `./scripts/gradle.sh build`). Until authored encounters arrive, continue using the config overlay (`Tab`/`M`) to resize the board or adjust tile sizes. Hazard density currently influences how many blocking pillars spawn—treat that as a stand-in for terrain density until the SRPG-specific generator lands.
 
-Press `V` in-game to open the weapon loadout menu, browse the rock/paper/scissors weapon set, and equip via `Enter`.
+Press `P` to review the party roster (HP/SP) and `V` to open the weapon loadout menu; at the start of each mission you’ll see the party list first, then the weapon selection, before placing units.
 
 ## Repository layout
 
